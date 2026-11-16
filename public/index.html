@@ -1,0 +1,81 @@
+﻿<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Качество воздуха</title>
+<style>
+:root{--bg:#f3f5f8;--card:#fff;--text:#1c2430;--muted:#6b7686;--good:#22a559;--mid:#e0a100;--bad:#e8590c;--vbad:#c92a2a;--none:#8895a7}
+@media (prefers-color-scheme:dark){:root{--bg:#10151c;--card:#1a212b;--text:#e8edf3;--muted:#92a0b3}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:20px 16px 40px}
+h1{margin:0 0 4px;font-size:1.6rem}
+.sub{color:var(--muted);font-size:.9rem;margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--none);display:inline-block}
+.hero{background:var(--card);border-radius:18px;padding:20px;margin-bottom:14px;border-left:8px solid var(--none)}
+.hero .t{color:var(--muted);font-size:.9rem}
+.hero .big{font-size:2rem;font-weight:700;margin-top:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.card{background:var(--card);border-radius:16px;padding:14px 16px;border-top:5px solid var(--none)}
+.card .n{color:var(--muted);font-size:.85rem}
+.card .v{font-size:1.9rem;font-weight:700;margin:4px 0 0}
+.card .u{font-size:.85rem;color:var(--muted);font-weight:400}
+.card .s{font-size:.8rem;margin-top:2px}
+.good{border-color:var(--good)}.good .s{color:var(--good)}
+.mid{border-color:var(--mid)}.mid .s{color:var(--mid)}
+.bad{border-color:var(--bad)}.bad .s{color:var(--bad)}
+.vbad{border-color:var(--vbad)}.vbad .s{color:var(--vbad)}
+.hero.good{border-left-color:var(--good)}.hero.mid{border-left-color:var(--mid)}.hero.bad{border-left-color:var(--bad)}.hero.vbad{border-left-color:var(--vbad)}
+</style></head><body><div class="wrap">
+<h1>Воздух дома</h1>
+<div class="sub"><span class="dot" id="dot"></span><span id="state">Загрузка…</span><span id="time"></span></div>
+<div class="hero" id="hero"><div class="t">Общая оценка</div><div class="big" id="hb">—</div></div>
+<div class="grid" id="grid"></div>
+</div>
+<script>
+const LV=['good','mid','bad','vbad'];
+const LT={good:'Хорошо',mid:'Умеренно',bad:'Плохо',vbad:'Очень плохо'};
+function rate(v,lim){for(let i=0;i<lim.length;i++){if(v<=lim[i])return LV[i];}return 'vbad';}
+const AQI={level_1:['Отлично','good'],level_2:['Хорошо','good'],level_3:['Умеренно','mid'],level_4:['Плохо','bad'],level_5:['Очень плохо','vbad'],level_6:['Опасно','vbad']};
+function build(m){
+  const out=[];
+  const add=(name,val,unit,lim,dec)=>{
+    if(val===undefined)return;
+    const r=lim?rate(val,lim):null;
+    out.push({name,val:dec?val.toFixed(dec):val,unit,cls:r||'',txt:r?LT[r]:''});
+  };
+  add('PM2.5',m.pm25_value,'мкг/м³',[15,35,75]);
+  add('PM10',m.pm10,'мкг/м³',[45,100,150]);
+  add('PM1',m.pm1,'мкг/м³',[15,35,75]);
+  add('CO₂',m.co2_value,'ppm',[800,1200,2000]);
+  add('Формальдегид',m.ch2o_value,'мкг/м³',[30,60,100]);
+  add('ЛОВ (VOC)',m.voc_value,'',null);
+  if(m.temp_current!==undefined){
+    const t=m.temp_current/10;
+    out.push({name:'Температура',val:t.toFixed(1),unit:'°C',cls:t>=20&&t<=25?'good':(t>=18&&t<=27?'mid':'bad'),txt:t>=20&&t<=25?'Комфортно':(t>=18&&t<=27?'Приемлемо':'Некомфортно')});
+  }
+  if(m.humidity_value!==undefined){
+    const h=m.humidity_value/10;
+    out.push({name:'Влажность',val:h.toFixed(1),unit:'%',cls:h>=40&&h<=60?'good':(h>=30&&h<=70?'mid':'bad'),txt:h>=40&&h<=60?'Комфортно':(h>=30&&h<=70?'Приемлемо':'Некомфортно')});
+  }
+  if(m.battery_percentage!==undefined){
+    out.push({name:'Батарея',val:m.battery_percentage,unit:'%',cls:m.battery_percentage>30?'good':(m.battery_percentage>15?'mid':'bad'),txt:m.charge_state?'Заряжается':''});
+  }
+  return out;
+}
+async function load(){
+  try{
+    const d=await (await fetch('/api/air')).json();
+    if(d.error||!d.status){document.getElementById('state').textContent='Ошибка: '+JSON.stringify(d);return;}
+    const m={};d.status.forEach(s=>m[s.code]=s.value);
+    document.getElementById('state').textContent=d.online?'Монитор онлайн':'Монитор офлайн';
+    document.getElementById('dot').style.background=d.online?'var(--good)':'var(--vbad)';
+    document.getElementById('time').textContent='Обновлено '+new Date().toLocaleTimeString('ru-RU');
+    const a=AQI[m.air_quality_index];
+    const hero=document.getElementById('hero');
+    hero.className='hero '+(a?a[1]:'');
+    document.getElementById('hb').textContent=a?a[0]:(m.air_quality_index||'—');
+    document.getElementById('grid').innerHTML=build(m).map(c=>`<div class="card ${c.cls}"><div class="n">${c.name}</div><div class="v">${c.val} <span class="u">${c.unit}</span></div><div class="s">${c.txt}</div></div>`).join('');
+  }catch(e){document.getElementById('state').textContent='Ошибка сети';}
+}
+load();setInterval(load,30000);
+</script></body></html>
